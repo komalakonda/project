@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Car Black Box System — Accident Analysis Dashboard</title>
+  <meta name="description" content="AI-powered car black box system for real-time accident detection, sensor monitoring, and driver safety analysis using machine learning.">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="bg-grid"></div>
+
+<div class="app-wrapper">
+  <!-- ================================================================ HEADER -->
+  <header class="header">
+    <div class="header-logo">
+      <div class="logo-icon">🚗</div>
+      <div>
+        <div class="logo-text">CarBlackBox <span style="color:var(--accent-cyan)">AI</span></div>
+        <div class="logo-sub">Accident Analysis & Safety System</div>
+      </div>
+    </div>
+    <div class="header-status" style="display:flex;align-items:center;gap:0.9rem;flex-wrap:wrap">
+      <span class="telematics-pill online" title="OBD-II CAN Bus link active"><i class="fas fa-network-wired"></i> CAN-BUS</span>
+      <span class="telematics-pill online" title="GPS 3D Fix Active (11 Satellites)"><i class="fas fa-satellite"></i> GPS 3D</span>
+      <span class="telematics-pill online" id="topGsmPill" title="Cellular Telemetry"><i class="fas fa-signal"></i> 4G LTE</span>
+      
+      <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-secondary);margin-left:6px">
+        <i class="fas fa-tachometer-alt" style="color:var(--accent-blue)"></i>
+        <span id="qs-speed" class="font-mono">– km/h</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-secondary)">
+        <i class="fas fa-exclamation-triangle" style="color:var(--accent-red)"></i>
+        <span id="qs-prob" class="font-mono">–</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-secondary)">
+        <i class="fas fa-user-shield" style="color:var(--accent-green)"></i>
+        <span id="qs-risk" class="font-mono">–</span>
+      </div>
+      <div id="simStatusBadge" class="status-badge offline">
+        <span class="dot"></span>OFFLINE
+      </div>
+      <span id="modelStatus" class="text-sm text-muted">Checking...</span>
+      <div class="time-display" id="liveTime">00:00:00</div>
+    </div>
+  </header>
+
+  <!-- ================================================================ NAV -->
+  <nav class="nav">
+    <div class="nav-item active" data-page="dashboard"><i class="fas fa-gauge-high"></i> Dashboard</div>
+    <div class="nav-item" data-page="vision"><i class="fas fa-video"></i> Vision & Dashcam <span style="font-size:0.65rem;background:rgba(239,68,68,0.2);color:var(--accent-red);padding:1px 5px;border-radius:4px;margin-left:4px">REC</span></div>
+    <div class="nav-item" data-page="sensors"><i class="fas fa-microchip"></i> Sensors</div>
+    <div class="nav-item" data-page="detection"><i class="fas fa-car-burst"></i> Detection</div>
+    <div class="nav-item" data-page="history"><i class="fas fa-history"></i> History</div>
+    <div class="nav-item" data-page="analytics"><i class="fas fa-chart-line"></i> Analytics</div>
+    <div class="nav-item" data-page="dataset"><i class="fas fa-database"></i> Dataset</div>
+    <div class="nav-item" data-page="ml"><i class="fas fa-brain"></i> ML Model</div>
+  </nav>
+
+  <!-- ================================================================ MAIN -->
+  <main class="main">
+
+    <!-- ============================================================ PAGE: DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      
+      <!-- Vehicle Status Info Strip -->
+      <div class="vehicle-info-strip">
+        <div class="vehicle-info-item"><i class="fas fa-shield-halved" style="color:var(--accent-blue)"></i> Unit: <strong>BBOX-AI-902</strong></div>
+        <div class="vehicle-info-item"><i class="fas fa-microchip" style="color:var(--accent-cyan)"></i> Hardware: <strong>ARM-Cortex IoT Telematics</strong></div>
+        <div class="vehicle-info-item"><i class="fas fa-camera" style="color:var(--accent-green)"></i> Vision: <strong>Dual Channel (Front + DMS)</strong></div>
+        <div class="vehicle-info-item"><i class="fas fa-hard-drive" style="color:var(--accent-purple)"></i> Black Box Log: <strong>Armed (Loop Buffer)</strong></div>
+        <div style="margin-left:auto;font-size:0.75rem;color:var(--text-muted)">
+          <i class="fas fa-circle-check" style="color:var(--accent-green)"></i> Real-time ML Inference Active
+        </div>
+      </div>
+
+      <!-- Recognized Mission Control Toolbar -->
+      <div class="mission-toolbar">
+        <button id="btnStart" class="btn btn-success btn-lg"><i class="fas fa-play"></i> Start Telemetry</button>
+        <button id="btnStop" class="btn btn-danger btn-lg" disabled><i class="fas fa-stop"></i> Stop</button>
+        <button id="btnTestCrash" class="btn btn-accent btn-lg" title="Simulate a high-impact crash collision event to verify ML detection and auto-capture">
+          <i class="fas fa-bolt"></i> Simulate Crash
+        </button>
+        <button id="btnCameraToggle" class="btn btn-secondary btn-lg" title="Turn Dashcam feed On/Off">
+          <i class="fas fa-camera"></i> Toggle Camera
+        </button>
+        <button id="btnQuickSnap" class="btn btn-secondary btn-lg" title="Archive current frame with telemetry watermark">
+          <i class="fas fa-camera-retro"></i> Capture Frame
+        </button>
+        
+        <div id="modeIndicator" class="mode-indicator mode-idle" style="margin-left:auto"><i class="fas fa-circle"></i> IDLE</div>
+        <span class="live-badge"><span class="dot"></span>LIVE BLACK BOX</span>
+      </div>
+
+      <!-- Alert Box -->
+      <div id="accidentAlertBox" class="alert-box alert-safe" style="display:none;">
+        <span class="alert-icon">⏸</span>
+        <div>
+          <div class="alert-title">Simulation Stopped</div>
+          <div class="alert-msg">Press "Start Telemetry" to begin vehicle sensor monitoring.</div>
+        </div>
+      </div>
+
+      <!-- Top Stats KPI Row -->
+      <div class="grid-4 mb-3">
+        <div class="stat-card">
+          <div class="accent-line" style="background:linear-gradient(90deg,#4f8ef7,#00d4ff)"></div>
+          <div class="stat-label">Vehicle Velocity</div>
+          <div class="stat-value" style="color:var(--accent-blue)" id="stat-speed">–</div>
+          <div class="stat-change"><i class="fas fa-road"></i> km/h (GPS Speed)</div>
+        </div>
+        <div class="stat-card">
+          <div class="accent-line" style="background:linear-gradient(90deg,#ef4444,#f97316)"></div>
+          <div class="stat-label">Accident Probability</div>
+          <div class="stat-value" style="color:var(--accent-red)" id="stat-prob">–</div>
+          <div class="stat-change"><i class="fas fa-shield-virus"></i> Real-time ML Prediction</div>
+        </div>
+        <div class="stat-card">
+          <div class="accent-line" style="background:linear-gradient(90deg,#10d981,#059669)"></div>
+          <div class="stat-label">Driver Safety Score</div>
+          <div class="stat-value" id="riskScore" style="color:var(--accent-green)">–</div>
+          <div class="stat-change" id="riskLabel" style="color:var(--accent-green)">LOW RISK</div>
+        </div>
+        <div class="stat-card">
+          <div class="accent-line" style="background:linear-gradient(90deg,#8b5cf6,#ec4899)"></div>
+          <div class="stat-label">Accident Severity</div>
+          <div style="margin-top:0.8rem" id="severityBadge">
+            <span class="severity-badge severity-none">✅ None</span>
+          </div>
+          <div class="stat-change mt-1"><i class="fas fa-brain"></i> AI Multi-Class Classifier</div>
+        </div>
+      </div>
+
+      <!-- Main Visual Cockpit Grid -->
+      <div class="grid-2">
+        
+        <!-- Live Automotive Dashcam & Vision HUD Card -->
+        <div class="dashcam-container" id="dashcamViewportContainer">
+          <div class="card-header" style="margin-bottom:0.5rem">
+            <div class="card-title">
+              <i class="fas fa-video" style="color:var(--accent-blue)"></i> AI Dashcam & Vision HUD
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="dashcamStatusBadge" class="status-badge safe"><span class="dot"></span>HIGHWAY SIM</span>
+              <button id="btnCameraFullscreen" class="btn btn-secondary btn-sm" title="Toggle Fullscreen Viewport">
+                <i class="fas fa-expand"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Video / Canvas Viewport -->
+          <div class="dashcam-viewport-wrap">
+            <video id="dashcamVideo" class="dashcam-video-hidden" autoplay playsinline muted></video>
+            <canvas id="dashcamCanvas" width="640" height="360" class="dashcam-canvas"></canvas>
+            <div class="dashcam-scanlines"></div>
+          </div>
+
+          <!-- Camera Stream Controls -->
+          <div class="dashcam-controls">
+            <select id="cameraDeviceSelect" class="dashcam-select" title="Select Video Input Device or Simulation Mode">
+              <option value="mode_road">🛣️ Dashcam Highway Simulator</option>
+              <option value="mode_cabin">👤 Cabin Driver Monitor (DMS)</option>
+              <option value="webcam_default">📷 Live Hardware Camera / Webcam</option>
+            </select>
+            <div class="dashcam-btn-group">
+              <button class="btn btn-primary btn-sm" onclick="CameraApp.captureSnapshot('manual')" title="Capture Watermarked Snapshot">
+                <i class="fas fa-camera-retro"></i> Snapshot
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="CameraApp.togglePower()" title="Pause/Resume Camera Feed">
+                <i class="fas fa-power-off"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telemetry Gauges & AI Insights Column -->
+        <div style="display:flex;flex-direction:column;gap:1.2rem">
+          
+          <div class="grid-2">
+            <!-- Probability Meter -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><i class="fas fa-chart-pie" style="color:var(--accent-red)"></i> Accident Risk</div>
+                <div class="live-badge"><span class="dot"></span>LIVE</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;padding:0.5rem 0">
+                <svg id="probArc" viewBox="0 0 180 90" style="width:180px;height:95px;overflow:visible">
+                  <path d="M 10 80 A 70 70 0 0 1 170 80" stroke="rgba(255,255,255,0.08)" stroke-width="12" fill="none" stroke-linecap="round"/>
+                  <path class="arc-fill" d="M 10 80 A 70 70 0 0 1 10 80" stroke="#10d981" stroke-width="12" fill="none" stroke-linecap="round" style="transition:all 0.6s ease"/>
+                  <text x="8" y="95" fill="#556070" font-size="10">0%</text>
+                  <text x="154" y="95" fill="#556070" font-size="10">100%</text>
+                </svg>
+                <div style="margin-top:-0.5rem;text-align:center">
+                  <div class="prob-value-big" id="probColor" style="color:#10d981;font-family:'Orbitron',sans-serif;font-size:2rem;font-weight:900">0%</div>
+                  <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em">Accident Probability</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Risk Gauge -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><i class="fas fa-user-shield" style="color:var(--accent-green)"></i> Safety Score</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;padding:0.5rem 0">
+                <svg id="riskArc" viewBox="0 0 180 90" style="width:180px;height:95px;overflow:visible">
+                  <path d="M 10 80 A 70 70 0 0 1 170 80" stroke="rgba(255,255,255,0.08)" stroke-width="12" fill="none" stroke-linecap="round"/>
+                  <path class="arc-fill" d="M 10 80 A 70 70 0 0 1 10 80" stroke="#10d981" stroke-width="12" fill="none" stroke-linecap="round" style="transition:all 0.6s ease"/>
+                  <text x="8" y="95" fill="#556070" font-size="10">0</text>
+                  <text x="158" y="95" fill="#556070" font-size="10">100</text>
+                </svg>
+                <div style="margin-top:-0.5rem;text-align:center">
+                  <div id="riskScore" style="font-family:'Orbitron',sans-serif;font-size:2rem;font-weight:900;color:var(--accent-green)">0</div>
+                  <div id="riskLabel" style="font-size:0.7rem;color:var(--accent-green);text-transform:uppercase;letter-spacing:0.08em">LOW RISK</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- GPS Coordinates Telemetry Mini Strip -->
+          <div class="card" style="padding:1rem">
+            <div class="card-header" style="margin-bottom:0.5rem">
+              <div class="card-title"><i class="fas fa-location-crosshairs" style="color:var(--accent-cyan)"></i> Telematics Fix</div>
+              <span class="text-sm font-mono text-info"><i class="fas fa-satellite"></i> 11 SATS</span>
+            </div>
+            <div class="gps-display">
+              <div class="gps-coord"><span class="gps-label">LAT</span><span id="gpsLat">–</span></div>
+              <div class="gps-coord"><span class="gps-label">LON</span><span id="gpsLon">–</span></div>
+            </div>
+          </div>
+
+          <!-- AI Analysis Box -->
+          <div class="card">
+            <div class="card-header" style="margin-bottom:0.5rem">
+              <div class="card-title"><i class="fas fa-brain" style="color:var(--accent-purple)"></i> Real-Time AI Diagnosis</div>
+            </div>
+            <div class="ai-analysis-box" id="aiAnalysisBox" style="font-size:0.8rem;min-height:90px">Start telemetry to activate AI accident reasoning...</div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ============================================================ PAGE: SENSORS -->
+    <div id="page-sensors" class="page">
+      <div class="page-header">
+        <h1 class="page-title"><i class="fas fa-microchip"></i> IoT Sensor Monitor</h1>
+        <div class="page-subtitle">Live readings from all 10 simulated sensors</div>
+      </div>
+
+      <div class="control-bar">
+        <button id="btnStart" class="btn btn-success" style="display:none"></button>
+        <span style="font-size:0.85rem;color:var(--text-secondary)"><i class="fas fa-info-circle"></i> Sensors auto-update when simulation is running</span>
+        <div id="modeIndicator" class="mode-indicator mode-idle" style="margin-left:auto"><i class="fas fa-circle"></i> IDLE</div>
+      </div>
+
+      <!-- Numeric Sensors -->
+      <div class="grid-auto mb-3">
+        <!-- ADXL345 -->
+        <div class="sensor-card safe" id="sc-speed">
+          <div class="sensor-header">
+            <span class="sensor-name">Speed (GPS)</span>
+            <span class="sensor-icon">🚗</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">km/h</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#4f8ef7"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-accel-x">
+          <div class="sensor-header">
+            <span class="sensor-name">ADXL345 — Accel X</span>
+            <span class="sensor-icon">📡</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">g</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#00d4ff"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-accel-y">
+          <div class="sensor-header">
+            <span class="sensor-name">ADXL345 — Accel Y</span>
+            <span class="sensor-icon">📡</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">g</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#00d4ff"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-accel-z">
+          <div class="sensor-header">
+            <span class="sensor-name">ADXL345 — Accel Z</span>
+            <span class="sensor-icon">📡</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">g</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#00d4ff"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-impact">
+          <div class="sensor-header">
+            <span class="sensor-name">Impact Force</span>
+            <span class="sensor-icon">💥</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">g</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#ef4444"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-alcohol">
+          <div class="sensor-header">
+            <span class="sensor-name">MQ-3 Alcohol Sensor</span>
+            <span class="sensor-icon">🍺</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">BAC</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#f59e0b"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-drowsy">
+          <div class="sensor-header">
+            <span class="sensor-name">Eye-Blink / Drowsiness</span>
+            <span class="sensor-icon">😴</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit"></span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#8b5cf6"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-dist">
+          <div class="sensor-header">
+            <span class="sensor-name">Ultrasonic Obstacle</span>
+            <span class="sensor-icon">📏</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">m</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#10d981"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-audio">
+          <div class="sensor-header">
+            <span class="sensor-name">Microphone (Audio)</span>
+            <span class="sensor-icon">🎙️</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">dB</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#ec4899"></div></div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-gsm">
+          <div class="sensor-header">
+            <span class="sensor-name">GSM Signal</span>
+            <span class="sensor-icon">📶</span>
+          </div>
+          <div class="sensor-value">–<span class="sensor-unit">%</span></div>
+          <div class="sensor-bar"><div class="sensor-bar-fill" style="width:0%;background:#10d981"></div></div>
+        </div>
+      </div>
+
+      <!-- Boolean Sensors -->
+      <div class="grid-3">
+        <div class="sensor-card safe" id="sc-sos">
+          <div class="sensor-header">
+            <span class="sensor-name">SOS Button</span>
+            <span class="sensor-icon">🆘</span>
+          </div>
+          <div class="sensor-value" style="font-size:1rem">✅ SAFE</div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-camera" style="cursor:pointer" onclick="document.querySelector('[data-page=vision]').click()" title="Click to view Dashcam & Vision Feed">
+          <div class="sensor-header">
+            <span class="sensor-name">Vision Camera</span>
+            <span class="sensor-icon">📷</span>
+          </div>
+          <div class="sensor-value" style="font-size:1rem">✅ ACTIVE</div>
+          <div style="font-size:0.72rem;color:var(--accent-blue);margin-top:6px"><i class="fas fa-arrow-up-right-from-square"></i> Open Live Dashcam</div>
+        </div>
+
+        <div class="sensor-card safe" id="sc-relay">
+          <div class="sensor-header">
+            <span class="sensor-name">Relay / Motor</span>
+            <span class="sensor-icon">⚙️</span>
+          </div>
+          <div class="sensor-value" style="font-size:1rem">✅ ON</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ PAGE: DETECTION -->
+    <div id="page-detection" class="page">
+      <div class="page-header">
+        <h1 class="page-title"><i class="fas fa-car-burst"></i> Accident Detection</h1>
+        <div class="page-subtitle">Real-time accident probability, severity classification, and AI cause analysis</div>
+      </div>
+
+      <div class="grid-2 mb-3">
+        <!-- Probability -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-percent" style="color:var(--accent-red)"></i> Accident Probability Meter</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;padding:1.5rem 0">
+            <svg viewBox="0 0 180 90" style="width:240px;height:120px;overflow:visible">
+              <defs>
+                <linearGradient id="probGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#10d981"/>
+                  <stop offset="50%" style="stop-color:#f59e0b"/>
+                  <stop offset="100%" style="stop-color:#ef4444"/>
+                </linearGradient>
+              </defs>
+              <path d="M 10 80 A 70 70 0 0 1 170 80" stroke="rgba(255,255,255,0.06)" stroke-width="16" fill="none" stroke-linecap="round"/>
+              <path class="arc-fill" id="probArc" d="M 10 80 A 70 70 0 0 1 10 80" stroke="url(#probGrad)" stroke-width="16" fill="none" stroke-linecap="round" style="transition:all 0.6s ease"/>
+            </svg>
+            <div style="margin-top:-1rem;text-align:center">
+              <div style="font-family:'Orbitron',sans-serif;font-size:3rem;font-weight:900;color:var(--accent-red)" id="probColor">0%</div>
+              <div style="font-size:0.8rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em">Accident Probability</div>
+            </div>
+          </div>
+          <div style="padding:0 1rem 0.5rem">
+            <div class="progress-bar"><div class="progress-fill" id="probProgressBar" style="width:0%;background:linear-gradient(90deg,#10d981,#f59e0b,#ef4444)"></div></div>
+            <div class="flex-between mt-1 text-sm text-muted"><span>Safe</span><span>Warning</span><span>Critical</span></div>
+          </div>
+        </div>
+
+        <!-- Severity + Cause -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-triangle-exclamation" style="color:var(--accent-yellow)"></i> Severity & Cause Analysis</div>
+          </div>
+          <div style="padding:0.5rem 0 1rem">
+            <div style="margin-bottom:1.2rem">
+              <div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Accident Severity</div>
+              <div id="severityBadge"><span class="severity-badge severity-none">✅ None</span></div>
+            </div>
+            <div style="margin-bottom:1.2rem">
+              <div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Possible Cause</div>
+              <div id="detCause" style="font-weight:600;color:var(--accent-yellow)">–</div>
+            </div>
+            <div>
+              <div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:8px">Driver Risk Score</div>
+              <div class="flex" style="align-items:center;gap:12px">
+                <div id="riskScore" style="font-family:'Orbitron',sans-serif;font-size:2rem;font-weight:900;color:var(--accent-green)">0</div>
+                <div>
+                  <div id="riskLabel" style="font-size:0.75rem;color:var(--accent-green);font-weight:700">LOW RISK</div>
+                  <div style="font-size:0.72rem;color:var(--text-muted)">/ 100</div>
+                </div>
+              </div>
+              <div class="progress-bar mt-1"><div class="progress-fill" id="riskProgressBar" style="width:0%;background:var(--accent-green)"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alert + AI Analysis -->
+      <div id="accidentAlertBox" class="alert-box alert-safe" style="margin-bottom:1.2rem;display:none">
+        <span class="alert-icon">⏸</span>
+        <div><div class="alert-title">Simulation Stopped</div><div class="alert-msg">Press "Start Simulation" on the Dashboard.</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><i class="fas fa-brain" style="color:var(--accent-purple)"></i> AI-Based Accident Analysis</div>
+          <div class="live-badge"><span class="dot"></span>REAL-TIME</div>
+        </div>
+        <div class="ai-analysis-box" id="aiAnalysisBox">Start simulation to see AI analysis...</div>
+      </div>
+    </div>
+
+    <!-- ============================================================ PAGE: HISTORY -->
+    <div id="page-history" class="page">
+      <div class="page-header">
+        <h1 class="page-title"><i class="fas fa-history"></i> Accident History</h1>
+        <div class="page-subtitle">Complete log of all detected accident events stored in SQLite</div>
+      </div>
+
+      <div class="control-bar mb-3">
+        <div>
+          <label style="margin-bottom:0;margin-right:8px;font-size:0.82rem">Filter by Severity:</label>
+          <select id="severityFilter" style="width:160px;padding:7px 12px">
+            <option value="">All Severities</option>
+            <option value="Minor">Minor</option>
+            <option value="Moderate">Moderate</option>
+            <option value="Severe">Severe</option>
+            <option value="Critical">Critical</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadAccidentHistory()"><i class="fas fa-refresh"></i> Refresh</button>
+        <button id="btnClearAccidents" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i> Clear All</button>
+        <div style="margin-left:auto;font-size:0.82rem;color:var(--text-secondary)">
+          Total: <strong id="totalAccidentsCount" style="color:var(--accent-cyan)">–</strong> events
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>Timestamp</th><th>Speed (km/h)</th><th>Severity</th>
+                <th>Probability</th><th>Possible Cause</th><th>Risk Score</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="accidentTableBody">
+              <tr><td colspan="8" class="table-empty"><i class="fas fa-car-crash" style="font-size:2rem;opacity:0.3;display:block;margin-bottom:8px"></i>No accidents recorded yet.<br><span class="text-sm text-muted">Start simulation to generate data.</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ PAGE: ANALYTICS -->
+    <div id="page-analytics" class="page">
+      <div class="page-header">
+        <h1 class="page-title"><i class="fas fa-chart-line"></i> Analytics & Statistics</h1>
+        <div class="page-subtitle">Data-driven insights from accident history and sensor readings</div>
+      </div>
+
+      <div class="control-bar mb-3">
+        <button id="btnRefreshAnalytics" class="btn btn-primary btn-sm"><i class="fas fa-refresh"></i> Refresh Analytics</button>
+      </div>
+
+      <!-- Summary Stats -->
+      <div class="grid-4 mb-3">
+        <div class="stat-card">
+          <div class="accent-line" style="background:var(--accent-red)"></div>
+          <div class="stat-label">Total Accidents</div>
+          <div class="stat-value" style="color:var(--accent-red)" id="ana-total-acc">–</div>
+        </div>
+        <div class="stat-card">
+          <div class="accent-line" style="background:var(--accent-blue)"></div>
+          <div class="stat-label">Total Readings</div>
+          <div class="stat-value" style="color:var(--accent-blue)" id="ana-total-reads">–</div>
+        </div>
+        <div class="stat-card">
+          <div class="accent-line" style="background:var(--accent-cyan)"></div>
+          <div class="stat-label">Avg Speed</div>
+          <div class="stat-value" style="color:var(--accent-cyan)" id="ana-avg-speed">–</div>
+        </div>
+        <div class="stat-card">
+          <div class="accent-line" style="background:var(--accent-yellow)"></div>
+          <div class="stat-label">Avg Accident Prob</div>
+          <div class="stat-value" style="color:var(--accent-yellow)" id="ana-avg-prob">–</div>
+        </div>
+      </div>
+
+      <!-- Charts Row 1 -->
+      <div class="grid-2 mb-3">
+        <div class="card">
+          <div class="chart-container chart-md">
+            <canvas id="chartSeverity"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="chart-container chart-md">
+            <canvas id="chartCause"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts Row 2 -->
+      <div class="grid-2 mb-3">
+        <div class="card">
+          <div class="chart-container chart-md">
+            <canvas id="chartTimeline"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="chart-container chart-md">
+            <canvas id="chartSpeed"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Radar -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><i class="fas fa-radar" style="color:var(--accent-red)"></i> Live Risk Radar (Current Sensor State)</div>
+        </div>
+        <div style="max-width:400px;margin:0 auto">
+          <div class="chart-container chart-md">
+            <canvas id="chartRadar"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ PAGE: DATASET -->
+    <div id="page-dataset" class="page">
+      <div class="page-header">
+        <h1 class="page-title"><i class="fas fa-database"></i> Dataset Management</h1>
+        <div class="page-subtitle">View, upload, validate, and download the car black box dataset</div>
+      </div>
+
+      <div class="grid-2 mb-3">
+        <!-- Upload Zone -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-upload" style="color:var(--accent-blue)"></i> Upload Dataset</div>
+          </div>
+          <div id="uploadZone" class="upload-zone">
+            <div class="upload-icon"><i class="fas fa-file-excel"></i></div>
+            <div class="upload-text">Drag & Drop or Click to Upload</div>
+            <div class="upload-hint">Supports .xlsx and .csv files</div>
+          </div>
+          <input type="file" id="fileInput" accept=".xlsx,.csv" style="display:none">
+          <div class="flex gap-1 mt-2" style="flex-wrap:wrap">
+            <button id="btnGenDataset" class="btn btn-primary"><i class="fas fa-database"></i> Generate Dataset</button>
+            <button id="btnDownloadDataset" class="btn btn-secondary"><i class="fas fa-download"></i> Download Sample</button>
+          </div>
+        </div>
+
+        <!-- Dataset Info -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><i class="fas fa-info-circle" style="color:var(--accent-cyan)"></i> Dataset Information</div>
+          </div>
+          <div id="datasetStats">
+            <div class="empty-state"><i class="fas fa-database"></i><p>Loading dataset info...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dataset Preview Table -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><i class="fas fa-table" style="color:var(--accent-green)"></i> Dataset Preview (First 20 Rows)</div>
+          <button class="btn btn-secondary btn-sm" onclick="loadDatasetPreview()"><i class="fas fa-refresh"></i></button>
+        </div>
+        <div class="dataset-preview" id="datasetPreviewTable">
+          <div class="empty-state"><i class="fas fa-table"></i><p>Loading preview...</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ PAGE: ML MODEL -->
+    <div id="page-ml" class="page">
+      <div class="page-header">
+        <h1 class="page-title"><i class="fas fa-brain"></i> ML Model & Performance</h1>
+        <div class="page-subtitle">RandomForest accident prediction model — training results and feature analysis</div>
+      </div>
+
+      <div class="control-bar mb-3">
+        <button id="btnTrainModel" class="btn btn-primary btn-lg"><i class="fas fa-brain"></i> Train Model</button>
+        <span class="text-sm text-muted">Trains on car_black_box_dataset.xlsx using RandomForest</span>
+      </div>
+
+      <div id="mlMetricsContainer">
+        <div class="empty-state card" style="padding:3rem">
+          <i class="fas fa-robot" style="font-size:3rem;opacity:0.3;display:block;margin-bottom:1rem"></i>
+          <p>Model not trained yet. Click "Train Model" to begin training on the dataset.</p>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="grid-2 mt-2">
+        <div class="card">
+          <div class="chart-container chart-md">
+            <canvas id="chartMetrics"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="chart-container chart-md">
+            <canvas id="chartFeatures"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================ PAGE: VISION & DASHCAM -->
+    <div id="page-vision" class="page">
+      <div class="page-header">
+        <h1 class="page-title"><i class="fas fa-video"></i> Automotive Vision & Incident Evidence</h1>
+        <div class="page-subtitle">Dual-channel front dashcam & driver monitoring system with telemetry HUD and automatic collision capture</div>
+      </div>
+
+      <!-- Controls & Quick Actions -->
+      <div class="mission-toolbar">
+        <button class="btn btn-primary btn-lg" onclick="CameraApp.startWebcam()"><i class="fas fa-camera"></i> Connect Real Webcam</button>
+        <button class="btn btn-secondary btn-lg" onclick="CameraApp.setSource('mode_road')"><i class="fas fa-road"></i> Front Highway Sim</button>
+        <button class="btn btn-secondary btn-lg" onclick="CameraApp.setSource('mode_cabin')"><i class="fas fa-user"></i> Driver DMS Sim</button>
+        <button class="btn btn-accent btn-lg" onclick="CameraApp.captureSnapshot('manual')"><i class="fas fa-camera-retro"></i> Capture Snapshot</button>
+        <button class="btn btn-danger btn-lg" onclick="triggerTestCrash()"><i class="fas fa-bolt"></i> Test Crash Capture</button>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <span class="telematics-pill online"><i class="fas fa-film"></i> 1080p @ 30FPS</span>
+          <span class="telematics-pill online"><i class="fas fa-shield-alt"></i> Crash Lock: Ready</span>
+        </div>
+      </div>
+
+      <!-- Evidence Gallery -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <i class="fas fa-images" style="color:var(--accent-cyan)"></i> Black Box Evidence & Incident Snapshots
+          </div>
+          <span id="evidenceCountBadge" class="telematics-pill online">0 Records</span>
+        </div>
+        <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">
+          Photographic forensic frames captured manually or automatically archived whenever ML collision detection flags high impact or accident probability.
+        </p>
+        <div id="cameraEvidenceGrid" class="evidence-grid">
+          <!-- Dynamically populated by CameraApp -->
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Snapshot Inspection Modal -->
+<div id="snapshotModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:850px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-camera-retro" style="color:var(--accent-blue)"></i> Black Box Forensic Frame</div>
+      <button class="modal-close" id="modalSnapClose"><i class="fas fa-times"></i></button>
+    </div>
+    <div style="width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;overflow:hidden;margin-bottom:1.2rem;border:1px solid var(--border-bright)">
+      <img id="modalSnapImage" src="" alt="Snapshot" style="width:100%;height:100%;object-fit:contain" />
+    </div>
+    <div id="modalSnapDetails"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:1.5rem">
+      <a id="modalSnapDownload" href="#" download="blackbox_frame.jpg" class="btn btn-primary">
+        <i class="fas fa-download"></i> Download Full Resolution
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- JS -->
+<script src="js/api.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/camera.js"></script>
+<script src="js/dashboard.js"></script>
+
+<script>
+// Wire up the probability progress bar & detection page cause/risk updates
+const _origFetch = fetchLiveData;
+const _origUpdateSev = updateSeverityDisplay;
+
+// Patch updateProbabilityMeter to also update the progress bar
+const _origProb = updateProbabilityMeter;
+window.updateProbabilityMeter = function(prob) {
+  _origProb(prob);
+  const bar = document.getElementById('probProgressBar');
+  if (bar) bar.style.width = (prob * 100) + '%';
+};
+
+// Patch updateRiskGauge for risk progress bar
+const _origRisk = updateRiskGauge;
+window.updateRiskGauge = function(score) {
+  _origRisk(score);
+  const bar = document.getElementById('riskProgressBar');
+  if (bar) {
+    bar.style.width = score + '%';
+    bar.style.background = score >= 70 ? '#ef4444' : score >= 40 ? '#f59e0b' : '#10d981';
+  }
+};
+
+// Patch updateAccidentAlert to also fill Detection page cause
+const _origAlert = updateAccidentAlert;
+window.updateAccidentAlert = function(d) {
+  _origAlert(d);
+  const causeEl = document.getElementById('detCause');
+  if (causeEl) causeEl.textContent = d.possible_cause || '–';
+  // stat cards on dashboard
+  const statSpeed = document.getElementById('stat-speed');
+  const statProb = document.getElementById('stat-prob');
+  if (statSpeed && d.speed !== undefined) statSpeed.textContent = d.speed.toFixed(1) + ' km/h';
+  if (statProb && d.accident_probability !== undefined)
+    statProb.textContent = (d.accident_probability * 100).toFixed(1) + '%';
+};
+</script>
+
+</body>
+</html>
